@@ -37,7 +37,7 @@ class SMTPClient(ContextHelper):
 
     def start(self):
         self.client = smtplib.SMTP(self.host, self.port)
-        #self.client.set_debuglevel(1)
+        # self.client.set_debuglevel(1)
         self.client.login(self.user, self.password)
         return self
 

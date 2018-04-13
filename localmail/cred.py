@@ -34,8 +34,11 @@ class TestServerRealm(object):
             if requestedInterface in self.avatarInterfaces:
                 avatarClass = self.avatarInterfaces[requestedInterface]
                 avatar = avatarClass()
+
                 # null logout function: take no arguments and do nothing
-                logout = lambda: None
+                def logout():
+                    pass
+
                 return defer.succeed((requestedInterface, avatar, logout))
 
         # none of the requested interfaces was supported

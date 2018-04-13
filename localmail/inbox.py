@@ -188,9 +188,10 @@ class MessagePart(object):
     def getBodyFile(self):
         if self.msg.is_multipart():
             raise TypeError("Requested body file of a multipart message")
-        # Understanding from the docs is that payload is going to be str on Python 3, but isn't
-        # decoded (e.g. may be quoted printable or Base64 encoded UTF-8 or something).
-        # In other words no character will be above \u0255, and we can therefore convert to bytes like this.
+        # Understanding from the docs is that payload is going to be str on
+        # Python 3, but isn't decoded (e.g. may be quoted printable or
+        # Base64 encoded UTF-8 or something). In other words no character will
+        # be above \u0255, and we can therefore convert to bytes like this.
         return StringIO(self.msg.get_payload().encode('latin-1'))
 
     def getSize(self):
@@ -227,7 +228,7 @@ class MessagePart(object):
 class Message(MessagePart):
 
     def __init__(self, fp, flags, date):
-        # email.message_from_binary_file is new in Python 3.3, 
+        # email.message_from_binary_file is new in Python 3.3,
         # and we need to use it if we are on Python3.
         if hasattr(email, 'message_from_binary_file'):
             parsed_message = email.message_from_binary_file(fp)
