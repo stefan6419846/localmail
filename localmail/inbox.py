@@ -20,15 +20,18 @@ from email.header import decode_header
 import mailbox
 import email.utils
 from itertools import count
-from cStringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import BytesIO as StringIO
 
-from zope.interface import implements
+from zope.interface import implementer
 
 from twisted.mail import imap4
 from twisted.python import log
 
 UID_GENERATOR = count()
-LAST_UID = UID_GENERATOR.next()
+LAST_UID = next(UID_GENERATOR)
 
 SEEN = r'\Seen'
 UNSEEN = r'\Unseen'
@@ -40,12 +43,12 @@ RECENT = r'\Recent'
 
 def get_counter():
     global LAST_UID
-    LAST_UID = UID_GENERATOR.next()
+    LAST_UID = next(UID_GENERATOR)
     return LAST_UID
 
 
+@implementer(imap4.IMailbox)
 class MemoryIMAPMailbox(object):
-    implements(imap4.IMailbox)
 
     mbox = None
 
@@ -117,7 +120,7 @@ class MemoryIMAPMailbox(object):
 
     def fetch(self, msg_set, uid):
         messages = self._get_msgs(msg_set, uid)
-        return messages.items()
+        return list(messages.items())
 
     def addListener(self, listener):
         self.listeners.append(listener)
@@ -165,8 +168,8 @@ class MemoryIMAPMailbox(object):
 INBOX = MemoryIMAPMailbox()
 
 
+@implementer(imap4.IMessagePart)
 class MessagePart(object):
-    implements(imap4.IMessagePart)
 
     def __init__(self, msg):
         self.msg = msg
@@ -185,7 +188,10 @@ class MessagePart(object):
     def getBodyFile(self):
         if self.msg.is_multipart():
             raise TypeError("Requested body file of a multipart message")
-        return StringIO(self.msg.get_payload())
+        # Understanding from the docs is that payload is going to be str on Python 3, but isn't
+        # decoded (e.g. may be quoted printable or Base64 encoded UTF-8 or something).
+        # In other words no character will be above \u0255, and we can therefore convert to bytes like this.
+        return StringIO(self.msg.get_payload().encode('latin-1'))
 
     def getSize(self):
         return len(self.msg.as_string())
@@ -217,11 +223,17 @@ class MessagePart(object):
         return orig.decode(enc)
 
 
+@implementer(imap4.IMessage)
 class Message(MessagePart):
-    implements(imap4.IMessage)
 
     def __init__(self, fp, flags, date):
-        super(Message, self).__init__(email.message_from_file(fp))
+        # email.message_from_binary_file is new in Python 3.3, 
+        # and we need to use it if we are on Python3.
+        if hasattr(email, 'message_from_binary_file'):
+            parsed_message = email.message_from_binary_file(fp)
+        else:
+            parsed_message = email.message_from_file(fp)
+        super(Message, self).__init__(parsed_message)
         self.data = str(self.msg)
         self.uid = get_counter()
         self.flags = set(flags)

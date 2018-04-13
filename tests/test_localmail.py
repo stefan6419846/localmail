@@ -13,7 +13,7 @@ except ImportError:
 
 import localmail
 
-from helpers import (
+from .helpers import (
     SMTPClient,
     IMAPClient,
     clean_inbox,

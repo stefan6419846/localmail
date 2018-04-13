@@ -14,25 +14,31 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-from cStringIO import StringIO
-
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import BytesIO as StringIO
 from twisted.internet import defer
 from twisted.mail import smtp
 from twisted.mail.imap4 import LOGINCredentials, PLAINCredentials
-from zope.interface import implements
+from zope.interface import implementer
 
-from inbox import INBOX
+from .inbox import INBOX
 
 
+@implementer(smtp.IMessage)
 class MemoryMessage(object):
     """Reads a message into a StringIO, and passes on to global inbox"""
-    implements(smtp.IMessage)
 
     def __init__(self):
         self.file = StringIO()
 
     def lineReceived(self, line):
-        self.file.write(line + '\n')
+        # Sometimes line is bytes, and sometimes it is a str.
+        # Let's assume that if it's a string, it's ASCII compatible.
+        if not isinstance(line, bytes):
+            line = line.encode('ascii')
+        self.file.write(line + b'\n')
 
     def eomReceived(self):
         self.file.seek(0)
@@ -44,9 +50,9 @@ class MemoryMessage(object):
         self.file.close()
 
 
+@implementer(smtp.IMessageDelivery)
 class MemoryDelivery(object):
     """Null-validator for email address - always delivers succesfully"""
-    implements(smtp.IMessageDelivery)
 
     def validateTo(self, user):
         return MemoryMessage
@@ -62,8 +68,8 @@ class TestServerESMTPFactory(smtp.SMTPFactory):
     """Factort for SMTP connections that authenticates any user"""
     protocol = smtp.ESMTP
     challengers = {
-        "LOGIN": LOGINCredentials,
-        "PLAIN": PLAINCredentials
+        b"LOGIN": LOGINCredentials,
+        b"PLAIN": PLAINCredentials
     }
     noisy = False
 

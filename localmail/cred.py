@@ -13,17 +13,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
-from zope.interface import implements
+from zope.interface import implementer
 from twisted.internet import defer
 from twisted.cred import portal, checkers, credentials
 from twisted.mail import smtp, imap4
 
-from imap import IMAPUserAccount
-from smtp import MemoryDelivery
+from .imap import IMAPUserAccount
+from .smtp import MemoryDelivery
 
 
+@implementer(portal.IRealm)
 class TestServerRealm(object):
-    implements(portal.IRealm)
     avatarInterfaces = {
         imap4.IAccount: IMAPUserAccount,
         smtp.IMessageDelivery: MemoryDelivery,
@@ -42,8 +42,8 @@ class TestServerRealm(object):
         raise KeyError("None of the requested interfaces is supported")
 
 
+@implementer(checkers.ICredentialsChecker)
 class CredentialsNonChecker(object):
-    implements(checkers.ICredentialsChecker)
     credentialInterfaces = (credentials.IUsernamePassword,
                             credentials.IUsernameHashedPassword)
 
