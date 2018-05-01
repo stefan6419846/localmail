@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright (C) 2012- Canonical Ltd
 #
 # This program is free software; you can redistribute it and/or modify
@@ -188,11 +189,16 @@ class MessagePart(object):
     def getBodyFile(self):
         if self.msg.is_multipart():
             raise TypeError("Requested body file of a multipart message")
-        # Understanding from the docs is that payload is going to be str on
-        # Python 3, but isn't decoded (e.g. may be quoted printable or
-        # Base64 encoded UTF-8 or something). In other words no character will
-        # be above \u0255, and we can therefore convert to bytes like this.
-        return StringIO(self.msg.get_payload().encode('latin-1'))
+        # On Python 3, the payload may be a string created using
+        # surrogate-escape encoding.
+        # We can't get at this through the public API, without also undoing
+        # any Content-Transfer-Encoding, which would be tedious to recreate
+        # so we access the private field. This may cause issues in future.
+        # ¯\_(ツ)_/¯
+        payload = self.msg._payload
+        if not isinstance(payload, bytes):
+            payload = payload.encode('ascii', 'surrogateescape')
+        return StringIO(payload)
 
     def getSize(self):
         return len(self.msg.as_string())
@@ -218,10 +224,11 @@ class MessagePart(object):
     def unicode(self, header):
         """Converts a header to unicode"""
         value = self.msg[header]
-        orig, enc = decode_header(value)[0]
-        if enc is None:
-            enc = self.parse_charset()
-        return orig.decode(enc)
+        parts = decode_header(value)
+        return ''.join(
+            decoded_part.decode(codec)
+            if codec is not None else decoded_part.decode('ascii')
+            for decoded_part, codec in parts)
 
 
 @implementer(imap4.IMessage)

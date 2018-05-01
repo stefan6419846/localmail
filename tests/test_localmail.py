@@ -1,11 +1,20 @@
+# coding: utf-8
+
 import os
 import time
 import threading
 import imaplib
 import smtplib
+from io import BytesIO
+from email.charset import Charset, BASE64, QP
+from email.message import Message
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
+from email.header import decode_header
+try:
+    from email.generator import BytesGenerator as Generator
+except ImportError:
+    from email.generator import Generator
 try:
     import unittest2 as unittest
 except ImportError:
@@ -150,21 +159,21 @@ class SequentialIdTestCase(BaseLocalmailTestcase):
 
     def test_delete_single_message(self):
         self.smtp.send(self._testmsg(1))
-        self.imap.store(1, '(\Deleted)')
+        self.imap.store(1, r'(\Deleted)')
         self.imap.client.expunge()
         self.assertEqual(self.imap.search('ALL'), [])
 
     def test_delete_with_multiple(self):
         self.smtp.send(self._testmsg(1))
         self.smtp.send(self._testmsg(2))
-        self.imap.store(1, '(\Deleted)')
+        self.imap.store(1, r'(\Deleted)')
         self.imap.client.expunge()
         self.assertEqual(self.imap.search('ALL'), [self.imap.msgid(1)])
 
     def test_search_deleted(self):
         self.smtp.send(self._testmsg(1))
         self.smtp.send(self._testmsg(2))
-        self.imap.store(1, '(\Deleted)')
+        self.imap.store(1, r'(\Deleted)')
         self.assertEqual(
             self.imap.search('(DELETED)'),
             [self.imap.msgid(1)]
@@ -191,3 +200,118 @@ class MultipartTestCase(SequentialIdTestCase):
         msg.attach(html)
         msg.attach(text)
         return msg
+
+
+class EncodingTestCase(BaseLocalmailTestcase):
+
+    # These characters are one byte in latin-1 but two in utf-8
+    difficult_chars = u"£ë"
+    # These characters are two bytes in either encoding
+    difficult_chars += u"筷子"
+    # Unicode snowman for good measure
+    difficult_chars += u"☃"
+    # These characters might trip up Base64 encoding...
+    difficult_chars += u"=+/"
+    # ... and these characters might trip up quoted printable
+    difficult_chars += u"=3D"  # QP encoded
+
+    difficult_chars_latin1_compatible = difficult_chars\
+        .encode('latin-1', 'ignore')\
+        .decode('latin-1')
+
+    uid = False
+
+    def setUp(self):
+        super(EncodingTestCase, self).setUp()
+        self.smtp = SMTPClient(HOST, SMTP_PORT)
+        self.smtp.start()
+        self.imap = IMAPClient(HOST, IMAP_PORT, uid=self.uid)
+        self.imap.start()
+        msgs = self.imap.search('ALL')
+        self.assertEqual(msgs, [])
+        self.addCleanup(self.smtp.stop)
+        self.addCleanup(self.imap.stop)
+
+    def _encode_message(self, msg):
+        with BytesIO() as fp:
+            generator = Generator(fp)
+            generator.flatten(msg)
+            return fp.getvalue()
+
+    def _make_message(self, text, charset, cte):
+        msg = Message()
+        ctes = {'8bit': None, 'base64': BASE64, 'quoted-printable': QP}
+        cs = Charset(charset)
+        cs.body_encoding = ctes[cte]
+        msg.set_payload(text, charset=cs)
+
+        # Should always be encoded correctly.
+        msg['Subject'] = self.difficult_chars
+        msg['From'] = 'from@example.com'
+        msg['To'] = 'to@example.com'
+        self.assertEqual(msg['Content-Transfer-Encoding'], cte)
+        return msg
+
+    def _fetch_and_delete_sole_message(self):
+        message_number = None
+        for _ in range(5):
+            try:
+                message_number, = self.imap.search('ALL')
+                break
+            except ValueError:
+                time.sleep(0.5)
+        else:
+            raise AssertionError("Single Message not found")
+        msg = self.imap.fetch(message_number)
+        self.imap.store(message_number, r'(\Deleted)')
+        self.imap.client.expunge()
+        return msg
+
+    def _do_test(self, payload, charset, cte):
+        # Arrange
+        msg = self._make_message(payload, charset, cte)
+        encoded = self._encode_message(msg)
+
+        # Act
+        self.smtp.client.sendmail(msg['From'], msg['To'], encoded)
+        received = self._fetch_and_delete_sole_message()
+
+        # Assert
+        payload_bytes = received.get_payload(decode=True)
+        payload_text = payload_bytes.decode(received.get_content_charset())
+        self.assertEqual(received['Content-Transfer-Encoding'], cte)
+        self.assertEqual(received.get_content_charset(), charset.lower())
+        (subject_bytes, subject_encoding), = decode_header(received['Subject'])
+        self.assertEqual(
+            subject_bytes.decode(subject_encoding),
+            self.difficult_chars)
+        self.assertEqual(payload_text.strip(), payload)
+
+    def test_roundtrip_latin_1_mail(self):
+        """
+        Mail with only latin-1 chars can be sent in latin-1
+
+        (8-bit MIME)
+        """
+        self._do_test(self.difficult_chars_latin1_compatible,
+                      'iso-8859-1', '8bit')
+
+    def test_roundtrip_utf8_mail(self):
+        """
+        Mail can be sent in utf-8 without encoding
+
+        (8-bit MIME)
+        """
+        self._do_test(self.difficult_chars, 'utf-8', '8bit')
+
+    def test_roundtrip_utf8_qp_mail(self):
+        """
+        Mail can be sent in utf-8 in quoted printable format
+        """
+        self._do_test(self.difficult_chars, 'utf-8', 'quoted-printable')
+
+    def test_roundtrip_utf8_base64_mail(self):
+        """
+        Mail can be sent in utf-8 in quoted printable format
+        """
+        self._do_test(self.difficult_chars, 'utf-8', 'base64')
