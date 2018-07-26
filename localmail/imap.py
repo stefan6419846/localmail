@@ -15,13 +15,13 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 from twisted.internet import protocol
 from twisted.mail import imap4
-from zope.interface import implements
+from zope.interface import implementer
 
-from inbox import INBOX
+from .inbox import INBOX
 
 
+@implementer(imap4.IAccount)
 class IMAPUserAccount(object):
-    implements(imap4.IAccount)
 
     def listMailboxes(self, ref, wildcard):
         "only support one folder"

@@ -54,8 +54,9 @@ if __name__ == '__main__':
             'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
             'Intended Audience :: Developers',
             'Operating System :: POSIX',
-            'Programming Language :: Python :: 2.6',
             'Programming Language :: Python :: 2.7',
+            'Programming Language :: Python :: 3.5',
+            'Programming Language :: Python :: 3.6',
             'Programming Language :: Python :: Implementation :: CPython',
             'Programming Language :: Python :: Implementation :: PyPy',
             'Topic :: Communications :: Email',
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     # normal users.
     try:
         from twisted.plugin import IPlugin, getPlugins
-    except ImportError:
+    except Exception:
         pass
     else:
         list(getPlugins(IPlugin))

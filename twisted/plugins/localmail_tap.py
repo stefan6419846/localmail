@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
-from zope.interface import implements
+from zope.interface import implementer
 
 from twisted.application import service
 from twisted import plugin
@@ -34,8 +34,8 @@ class Options(usage.Options):
     ]
 
 
+@implementer(service.IServiceMaker, plugin.IPlugin)
 class LocalmailServiceMaker(object):
-    implements(service.IServiceMaker, plugin.IPlugin)
     tapname = "localmail"
     description = "A test SMTP/IMAP server"
     options = Options

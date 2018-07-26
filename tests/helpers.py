@@ -1,6 +1,9 @@
 import smtplib
 import imaplib
-from email import message_from_string
+try:
+    from email import message_from_bytes as message_from_string
+except ImportError:
+    from email import message_from_string
 
 
 class ContextHelper(object):
@@ -34,7 +37,7 @@ class SMTPClient(ContextHelper):
 
     def start(self):
         self.client = smtplib.SMTP(self.host, self.port)
-        #self.client.set_debuglevel(1)
+        # self.client.set_debuglevel(1)
         self.client.login(self.user, self.password)
         return self
 
@@ -99,5 +102,5 @@ class IMAPClient(ContextHelper):
                 return None
             msg_set = msgs[seq - 1]
         else:
-            msg_set = str(seq)
+            msg_set = str(seq).encode('ascii')
         return msg_set

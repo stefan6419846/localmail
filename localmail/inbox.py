@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright (C) 2012- Canonical Ltd
 #
 # This program is free software; you can redistribute it and/or modify
@@ -20,15 +21,18 @@ from email.header import decode_header
 import mailbox
 import email.utils
 from itertools import count
-from cStringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import BytesIO as StringIO
 
-from zope.interface import implements
+from zope.interface import implementer
 
 from twisted.mail import imap4
 from twisted.python import log
 
 UID_GENERATOR = count()
-LAST_UID = UID_GENERATOR.next()
+LAST_UID = next(UID_GENERATOR)
 
 SEEN = r'\Seen'
 UNSEEN = r'\Unseen'
@@ -40,12 +44,12 @@ RECENT = r'\Recent'
 
 def get_counter():
     global LAST_UID
-    LAST_UID = UID_GENERATOR.next()
+    LAST_UID = next(UID_GENERATOR)
     return LAST_UID
 
 
+@implementer(imap4.IMailbox)
 class MemoryIMAPMailbox(object):
-    implements(imap4.IMailbox)
 
     mbox = None
 
@@ -117,7 +121,7 @@ class MemoryIMAPMailbox(object):
 
     def fetch(self, msg_set, uid):
         messages = self._get_msgs(msg_set, uid)
-        return messages.items()
+        return list(messages.items())
 
     def addListener(self, listener):
         self.listeners.append(listener)
@@ -165,8 +169,8 @@ class MemoryIMAPMailbox(object):
 INBOX = MemoryIMAPMailbox()
 
 
+@implementer(imap4.IMessagePart)
 class MessagePart(object):
-    implements(imap4.IMessagePart)
 
     def __init__(self, msg):
         self.msg = msg
@@ -185,7 +189,16 @@ class MessagePart(object):
     def getBodyFile(self):
         if self.msg.is_multipart():
             raise TypeError("Requested body file of a multipart message")
-        return StringIO(self.msg.get_payload())
+        # On Python 3, the payload may be a string created using
+        # surrogate-escape encoding.
+        # We can't get at this through the public API, without also undoing
+        # any Content-Transfer-Encoding, which would be tedious to recreate
+        # so we access the private field. This may cause issues in future.
+        # ¯\_(ツ)_/¯
+        payload = self.msg._payload
+        if not isinstance(payload, bytes):
+            payload = payload.encode('ascii', 'surrogateescape')
+        return StringIO(payload)
 
     def getSize(self):
         return len(self.msg.as_string())
@@ -211,17 +224,24 @@ class MessagePart(object):
     def unicode(self, header):
         """Converts a header to unicode"""
         value = self.msg[header]
-        orig, enc = decode_header(value)[0]
-        if enc is None:
-            enc = self.parse_charset()
-        return orig.decode(enc)
+        parts = decode_header(value)
+        return ''.join(
+            decoded_part.decode(codec)
+            if codec is not None else decoded_part.decode('ascii')
+            for decoded_part, codec in parts)
 
 
+@implementer(imap4.IMessage)
 class Message(MessagePart):
-    implements(imap4.IMessage)
 
     def __init__(self, fp, flags, date):
-        super(Message, self).__init__(email.message_from_file(fp))
+        # email.message_from_binary_file is new in Python 3.3,
+        # and we need to use it if we are on Python3.
+        if hasattr(email, 'message_from_binary_file'):
+            parsed_message = email.message_from_binary_file(fp)
+        else:
+            parsed_message = email.message_from_file(fp)
+        super(Message, self).__init__(parsed_message)
         self.data = str(self.msg)
         self.uid = get_counter()
         self.flags = set(flags)
